@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"benchmark/bench"
+	"nats-bench-latencies/bench"
 
 	"github.com/nats-io/go-nats"
 )
