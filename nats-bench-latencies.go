@@ -170,9 +170,6 @@ func runSubscriber(startwg, donewg *sync.WaitGroup, opts nats.Options, numMsgs i
 		// fmt.Println("Latency NS: ", latency)
 		if received >= numMsgs {
 			meanLatency := totalLatency / int64(numMsgs)
-			fmt.Println("Min Latency: ", minLatency)
-			fmt.Println("Max Latency: ", maxLatency)
-			fmt.Println("Mean Latency: ", meanLatency)
 			latencies := bench.Latencies{minLatency, maxLatency, meanLatency}
 			benchmark.AddSubSample(bench.NewSample(numMsgs, msgSize, start, time.Now(), nc, latencies))
 			donewg.Done()

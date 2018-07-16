@@ -250,6 +250,44 @@ func (sg *SampleGroup) StdDev() float64 {
 	return math.Sqrt(variance)
 }
 
+// Latency Statistics information of the sample group (min, average, max and standard deviation)
+func (sg *SampleGroup) StatisticsLatency() string {
+	return fmt.Sprintf("min %s | avg %s | max %s | stddev %s Latency (ns)", commaFormat(sg.MinLatencyNano()), commaFormat(sg.AvgLatencyNano()), commaFormat(sg.MaxLatencyNano()), commaFormat(int64(0)))
+}
+
+// MinLatencyNano returns the smallest latency in the SampleGroup
+func (sg *SampleGroup) MinLatencyNano() int64 {
+	m := int64(0)
+	for i, s := range sg.Samples {
+		if i == 0 {
+			m = s.Latencies.Min
+		}
+		m = min(m, s.Latencies.Min)
+	}
+	return m
+}
+
+// MaxLatencyNano returns the largest latency in the SampleGroup
+func (sg *SampleGroup) MaxLatencyNano() int64 {
+	m := int64(0)
+	for i, s := range sg.Samples {
+		if i == 0 {
+			m = s.Latencies.Max
+		}
+		m = max(m, s.Latencies.Max)
+	}
+	return m
+}
+
+// AvgLatencyNano returns the average of all latencies in the SampleGroup
+func (sg *SampleGroup) AvgLatencyNano() int64 {
+	sum := uint64(0)
+	for _, s := range sg.Samples {
+		sum += uint64(s.Latencies.Mean)
+	}
+	return int64(sum / uint64(len(sg.Samples)))
+}
+
 // AddSample adds a Sample to the SampleGroup. After adding a Sample it shouldn't be modified.
 func (sg *SampleGroup) AddSample(e *Sample) {
 	sg.Samples = append(sg.Samples, e)
@@ -307,6 +345,7 @@ func (bm *Benchmark) Report() string {
 				buffer.WriteString(fmt.Sprintf("%s [%d] %v (%d msgs)\n", indent, i+1, stat, stat.JobMsgCnt))
 			}
 			buffer.WriteString(fmt.Sprintf("%s %s\n", indent, bm.Subs.Statistics()))
+			buffer.WriteString(fmt.Sprintf("%s %s\n", indent, bm.Subs.StatisticsLatency()))
 		}
 	}
 	return buffer.String()
