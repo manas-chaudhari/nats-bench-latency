@@ -14,6 +14,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -126,10 +127,15 @@ func runPublisher(startwg, donewg *sync.WaitGroup, opts nats.Options, numMsgs in
 	start := time.Now()
 
 	for i := 0; i < numMsgs; i++ {
+		now := time.Now().UnixNano()
+		b := make([]byte, 8)
+		binary.LittleEndian.PutUint64(b, uint64(now))
+		copy(msg[0:8], b)
+
 		nc.Publish(subj, msg)
 	}
 	nc.Flush()
-	benchmark.AddPubSample(bench.NewSample(numMsgs, msgSize, start, time.Now(), nc))
+	benchmark.AddPubSample(bench.NewSample(numMsgs, msgSize, start, time.Now(), nc, bench.Latencies{}))
 
 	donewg.Done()
 }
@@ -145,10 +151,30 @@ func runSubscriber(startwg, donewg *sync.WaitGroup, opts nats.Options, numMsgs i
 
 	received := 0
 	start := time.Now()
+
+	minLatency := int64(1e10)
+	maxLatency := int64(0)
+	totalLatency := int64(0)
 	nc.Subscribe(subj, func(msg *nats.Msg) {
 		received++
+		sentAt := int64(binary.LittleEndian.Uint64(msg.Data[0:8]))
+		receivedAt := time.Now().UnixNano()
+		latency := receivedAt - sentAt
+		totalLatency += latency
+		if latency < minLatency {
+			minLatency = latency
+		}
+		if latency > maxLatency {
+			maxLatency = latency
+		}
+		// fmt.Println("Latency NS: ", latency)
 		if received >= numMsgs {
-			benchmark.AddSubSample(bench.NewSample(numMsgs, msgSize, start, time.Now(), nc))
+			meanLatency := totalLatency / int64(numMsgs)
+			fmt.Println("Min Latency: ", minLatency)
+			fmt.Println("Max Latency: ", maxLatency)
+			fmt.Println("Mean Latency: ", meanLatency)
+			latencies := bench.Latencies{minLatency, maxLatency, meanLatency}
+			benchmark.AddSubSample(bench.NewSample(numMsgs, msgSize, start, time.Now(), nc, latencies))
 			donewg.Done()
 			nc.Close()
 		}

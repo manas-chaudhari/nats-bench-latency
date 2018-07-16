@@ -26,6 +26,12 @@ import (
 	"github.com/nats-io/nuid"
 )
 
+type Latencies struct {
+	Min  int64
+	Max  int64
+	Mean int64
+}
+
 // A Sample for a particular client
 type Sample struct {
 	JobMsgCnt int
@@ -34,6 +40,7 @@ type Sample struct {
 	IOBytes   uint64
 	Start     time.Time
 	End       time.Time
+	Latencies Latencies
 }
 
 // SampleGroup for a number of samples, the group is a Sample itself agregating the values the Samples
@@ -120,7 +127,7 @@ func (bm *Benchmark) AddPubSample(s *Sample) {
 func (bm *Benchmark) CSV() string {
 	var buffer bytes.Buffer
 	writer := csv.NewWriter(&buffer)
-	headers := []string{"#RunID", "ClientID", "MsgCount", "MsgBytes", "MsgsPerSec", "BytesPerSec", "DurationSecs"}
+	headers := []string{"#RunID", "ClientID", "MsgCount", "MsgBytes", "MsgsPerSec", "BytesPerSec", "DurationSecs", "MinLatencyNano", "MaxLatencyNano", "AvgLatencyNano"}
 	if err := writer.Write(headers); err != nil {
 		log.Fatalf("Error while serializing headers %q: %v", headers, err)
 	}
@@ -131,7 +138,17 @@ func (bm *Benchmark) CSV() string {
 			pre = "P"
 		}
 		for j, c := range g.Samples {
-			r := []string{bm.RunID, fmt.Sprintf("%s%d", pre, j), fmt.Sprintf("%d", c.MsgCnt), fmt.Sprintf("%d", c.MsgBytes), fmt.Sprintf("%d", c.Rate()), fmt.Sprintf("%f", c.Throughput()), fmt.Sprintf("%f", c.Duration().Seconds())}
+			r := []string{
+				bm.RunID,
+				fmt.Sprintf("%s%d", pre, j),
+				fmt.Sprintf("%d", c.MsgCnt),
+				fmt.Sprintf("%d", c.MsgBytes),
+				fmt.Sprintf("%d", c.Rate()),
+				fmt.Sprintf("%f", c.Throughput()),
+				fmt.Sprintf("%f", c.Duration().Seconds()),
+				fmt.Sprintf("%d", c.Latencies.Min),
+				fmt.Sprintf("%d", c.Latencies.Max),
+				fmt.Sprintf("%d", c.Latencies.Mean)}
 			if err := writer.Write(r); err != nil {
 				log.Fatalf("Error while serializing %v: %v", c, err)
 			}
@@ -143,8 +160,8 @@ func (bm *Benchmark) CSV() string {
 }
 
 // NewSample creates a new Sample initialized to the provided values. The nats.Conn information captured
-func NewSample(jobCount int, msgSize int, start, end time.Time, nc *nats.Conn) *Sample {
-	s := Sample{JobMsgCnt: jobCount, Start: start, End: end}
+func NewSample(jobCount int, msgSize int, start, end time.Time, nc *nats.Conn, latencies Latencies) *Sample {
+	s := Sample{JobMsgCnt: jobCount, Start: start, End: end, Latencies: latencies}
 	s.MsgBytes = uint64(msgSize * jobCount)
 	s.MsgCnt = nc.OutMsgs + nc.InMsgs
 	s.IOBytes = nc.OutBytes + nc.InBytes
