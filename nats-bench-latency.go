@@ -37,7 +37,7 @@ const (
 )
 
 func usage() {
-	log.Fatalf("Usage: nats-bench [-s server (%s)] [--tls] [-np NUM_PUBLISHERS] [-ns NUM_SUBSCRIBERS] [-n NUM_MSGS] [-ms MESSAGE_SIZE] [-csv csvfile] <subject>\n", nats.DefaultURL)
+	log.Fatalf("Usage: nats-bench-latency [-s server (%s)] [--tls] [-np NUM_PUBLISHERS] [-ns NUM_SUBSCRIBERS] [-n NUM_MSGS] [-ms MESSAGE_SIZE] [-pr PUBLISH_RATE] [-csv csvfile] <subject>\n", nats.DefaultURL)
 }
 
 var benchmark *bench.Benchmark
@@ -50,6 +50,7 @@ func main() {
 	var numMsgs = flag.Int("n", DefaultNumMsgs, "Number of Messages to Publish")
 	var msgSize = flag.Int("ms", DefaultMessageSize, "Size of the message.")
 	var csvFile = flag.String("csv", "", "Save bench data to csv file")
+	var publishRate = flag.Int("pr", 0, "Number of messages to publish per second per publisher")
 
 	log.SetFlags(0)
 	flag.Usage = usage
@@ -90,7 +91,7 @@ func main() {
 	startwg.Add(*numPubs)
 	pubCounts := bench.MsgsPerClient(*numMsgs, *numPubs)
 	for i := 0; i < *numPubs; i++ {
-		go runPublisher(&startwg, &donewg, opts, pubCounts[i], *msgSize)
+		go runPublisher(&startwg, &donewg, opts, pubCounts[i], *msgSize, *publishRate)
 	}
 
 	log.Printf("Starting benchmark [msgs=%d, msgsize=%d, pubs=%d, subs=%d]\n", *numMsgs, *msgSize, *numPubs, *numSubs)
@@ -109,7 +110,7 @@ func main() {
 	}
 }
 
-func runPublisher(startwg, donewg *sync.WaitGroup, opts nats.Options, numMsgs int, msgSize int) {
+func runPublisher(startwg, donewg *sync.WaitGroup, opts nats.Options, numMsgs int, msgSize int, publishRate int) {
 	nc, err := opts.Connect()
 	if err != nil {
 		log.Fatalf("Can't connect: %v\n", err)
@@ -124,9 +125,7 @@ func runPublisher(startwg, donewg *sync.WaitGroup, opts nats.Options, numMsgs in
 		msg = make([]byte, msgSize)
 	}
 
-	start := time.Now()
-
-	for i := 0; i < numMsgs; i++ {
+	publish := func() {
 		now := time.Now().UnixNano()
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, uint64(now))
@@ -134,6 +133,21 @@ func runPublisher(startwg, donewg *sync.WaitGroup, opts nats.Options, numMsgs in
 
 		nc.Publish(subj, msg)
 	}
+
+	start := time.Now()
+	if publishRate > 0 {
+		period := time.Second / time.Duration(publishRate)
+		throttle := time.Tick(period)
+		for i := 0; i < numMsgs; i++ {
+			<-throttle
+			publish()
+		}
+	} else {
+		for i := 0; i < numMsgs; i++ {
+			publish()
+		}
+	}
+
 	nc.Flush()
 	benchmark.AddPubSample(bench.NewSample(numMsgs, msgSize, start, time.Now(), nc, bench.Latencies{}))
 
